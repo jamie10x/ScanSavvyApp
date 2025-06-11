@@ -1,0 +1,128 @@
+package com.jamie.scansavvy.data
+
+import android.content.Context
+import android.net.Uri
+import androidx.core.net.toUri
+import com.jamie.scansavvy.data.database.Document
+import com.jamie.scansavvy.data.database.DocumentDao
+import com.jamie.scansavvy.data.database.DocumentWithPages
+import com.jamie.scansavvy.data.database.Page
+import com.jamie.scansavvy.domain.DocumentAnalyzer
+import com.jamie.scansavvy.domain.PdfExporter
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
+
+
+@Singleton
+class PictureRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val documentDao: DocumentDao,
+    private val documentAnalyzer: DocumentAnalyzer,
+    private val pdfExporter: PdfExporter
+) {
+
+    fun getAllDocuments(): Flow<List<DocumentWithPages>> {
+        return documentDao.getAllDocumentsWithPages()
+    }
+
+    fun getDocumentById(documentId: Int): Flow<DocumentWithPages?> {
+        return documentDao.getDocumentWithPagesById(documentId)
+    }
+
+    suspend fun deleteDocument(document: Document): Result<Unit> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val docWithPagesFlow = documentDao.getDocumentWithPagesById(document.id)
+            docWithPagesFlow.first()?.pages?.forEach { page ->
+                val file = File(page.imageUri.toUri().path!!)
+                if (file.exists()) {
+                    file.delete()
+                }
+            }
+            documentDao.deleteDocument(document)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveNewScan(pageUris: List<Uri>): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            val permanentPageList = mutableListOf<Page>()
+            val permanentUris = mutableListOf<Uri>()
+
+            pageUris.forEachIndexed { index, uri ->
+                val permanentUri = copyFileToInternalStorage(uri, "page_${System.currentTimeMillis()}_$index.jpg")
+                if (permanentUri != null) {
+                    permanentUris.add(permanentUri)
+                }
+            }
+
+            if (permanentUris.isEmpty()) {
+                throw Exception("Failed to copy scanned images to permanent storage.")
+            }
+
+            // Step 1: Analyze the content BEFORE saving to the database
+            val analysisResult = documentAnalyzer.analyze(permanentUris)
+
+            // Step 2: Create the permanent Page objects with the OCR text
+            permanentUris.forEachIndexed { index, uri ->
+                permanentPageList.add(
+                    Page(
+                        documentId = 0,
+                        pageNumber = index + 1,
+                        imageUri = uri.toString(),
+                        // For simplicity, we assign the full text to the first page.
+                        ocrText = if (index == 0) analysisResult.fullText else ""
+                    )
+                )
+            }
+
+            // Step 3: Create the Document with the new smart title
+            val newDocument = Document(title = analysisResult.smartTitle)
+            val newDocumentId = documentDao.insertDocument(newDocument)
+            val pagesWithDocumentId = permanentPageList.map { it.copy(documentId = newDocumentId.toInt()) }
+            documentDao.insertPages(pagesWithDocumentId)
+
+            Result.success(newDocumentId.toInt())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun copyFileToInternalStorage(sourceUri: Uri, newFileName: String): Uri? {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(sourceUri)
+            val file = File(context.filesDir, newFileName)
+            val outputStream = FileOutputStream(file)
+            inputStream?.copyTo(outputStream)
+            inputStream?.close()
+            outputStream.close()
+            Uri.fromFile(file)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    fun searchDocuments(query: String): Flow<List<DocumentWithPages>> {
+        val ftsQuery = if (query.isNotBlank()) "$query*" else query
+        return documentDao.searchDocuments(ftsQuery)
+    }
+
+    suspend fun generatePdfForDocument(documentId: Int): Result<Uri> {
+        val document = getDocumentById(documentId).firstOrNull()
+        return if (document != null) {
+            pdfExporter.createPdf(document)
+        } else {
+            Result.failure(Exception("Document not found."))
+        }
+    }
+}
