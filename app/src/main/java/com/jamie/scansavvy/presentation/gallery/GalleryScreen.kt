@@ -32,6 +32,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -52,11 +55,21 @@ fun GalleryScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
+    // Handle the delete confirmation dialog
     uiState.showDeleteConfirmation?.let { docToDelete ->
         DeleteConfirmationDialog(
             document = docToDelete,
             onConfirm = { viewModel.onConfirmDelete() },
             onDismiss = { viewModel.onDismissDeleteConfirmation() }
+        )
+    }
+
+    // Handle the rename dialog
+    uiState.documentToRename?.let { docToRename ->
+        RenameDialog(
+            document = docToRename,
+            onConfirm = { newTitle -> viewModel.onConfirmRename(newTitle) },
+            onDismiss = { viewModel.onDismissRenameDialog() }
         )
     }
 
@@ -73,6 +86,7 @@ fun GalleryScreen(
         }
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues)) {
+            // Search Bar
             OutlinedTextField(
                 value = uiState.searchQuery,
                 onValueChange = { viewModel.onSearchQueryChanged(it) },
@@ -91,6 +105,7 @@ fun GalleryScreen(
                 singleLine = true
             )
 
+            // Content
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -108,7 +123,8 @@ fun GalleryScreen(
                             },
                             onDocumentLongClick = { viewModel.onDocumentLongPress(it) },
                             onDismissMenu = { viewModel.onDismissMenu() },
-                            onDeleteClick = { viewModel.onDeleteRequest(it) }
+                            onDeleteClick = { viewModel.onDeleteRequest(it) },
+                            onRenameClick = { viewModel.onRenameRequest(it) }
                         )
                     }
                 }
@@ -125,7 +141,8 @@ fun DocumentGrid(
     onDocumentClick: (Int) -> Unit,
     onDocumentLongClick: (Int) -> Unit,
     onDismissMenu: () -> Unit,
-    onDeleteClick: (DocumentWithPages) -> Unit
+    onDeleteClick: (DocumentWithPages) -> Unit,
+    onRenameClick: (DocumentWithPages) -> Unit
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 128.dp),
@@ -161,6 +178,10 @@ fun DocumentGrid(
                     onDismissRequest = onDismissMenu
                 ) {
                     DropdownMenuItem(
+                        text = { Text("Rename") },
+                        onClick = { onRenameClick(docWithPages) }
+                    )
+                    DropdownMenuItem(
                         text = { Text("Delete") },
                         onClick = { onDeleteClick(docWithPages) }
                     )
@@ -183,6 +204,42 @@ fun DeleteConfirmationDialog(
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RenameDialog(
+    document: DocumentWithPages,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var newTitle by remember(document) { mutableStateOf(document.document.title) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename Document") },
+        text = {
+            OutlinedTextField(
+                value = newTitle,
+                onValueChange = { newTitle = it },
+                label = { Text("New Title") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(newTitle) },
+                enabled = newTitle.isNotBlank()
+            ) {
+                Text("Rename")
             }
         },
         dismissButton = {

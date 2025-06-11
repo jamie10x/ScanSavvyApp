@@ -6,7 +6,10 @@ import com.jamie.scansavvy.data.PictureRepository
 import com.jamie.scansavvy.data.database.DocumentWithPages
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -15,6 +18,7 @@ data class GalleryScreenUiState(
     val searchQuery: String = "",
     val expandedMenuDocumentId: Int? = null,
     val showDeleteConfirmation: DocumentWithPages? = null,
+    val documentToRename: DocumentWithPages? = null,
     val isLoading: Boolean = true,
     val error: String? = null,
 )
@@ -26,13 +30,11 @@ class GalleryViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
-
     private val _uiState = MutableStateFlow(GalleryScreenUiState())
     val uiState: StateFlow<GalleryScreenUiState> = _uiState
 
     init {
         viewModelScope.launch {
-            // This will re-trigger the document search whenever the search query changes.
             _searchQuery.flatMapLatest { query ->
                 if (query.isBlank()) {
                     pictureRepository.getAllDocuments()
@@ -58,6 +60,7 @@ class GalleryViewModel @Inject constructor(
         _uiState.update { it.copy(expandedMenuDocumentId = null) }
     }
 
+    // --- Delete Logic ---
     fun onDeleteRequest(document: DocumentWithPages) {
         _uiState.update { it.copy(showDeleteConfirmation = document, expandedMenuDocumentId = null) }
     }
@@ -73,5 +76,24 @@ class GalleryViewModel @Inject constructor(
 
     fun onDismissDeleteConfirmation() {
         _uiState.update { it.copy(showDeleteConfirmation = null) }
+    }
+
+    fun onRenameRequest(document: DocumentWithPages) {
+        _uiState.update { it.copy(documentToRename = document, expandedMenuDocumentId = null) }
+    }
+
+    fun onConfirmRename(newTitle: String) {
+        viewModelScope.launch {
+            _uiState.value.documentToRename?.let { docToRename ->
+                if (newTitle.isNotBlank()) {
+                    pictureRepository.renameDocument(docToRename.document, newTitle)
+                }
+                _uiState.update { it.copy(documentToRename = null) }
+            }
+        }
+    }
+
+    fun onDismissRenameDialog() {
+        _uiState.update { it.copy(documentToRename = null) }
     }
 }

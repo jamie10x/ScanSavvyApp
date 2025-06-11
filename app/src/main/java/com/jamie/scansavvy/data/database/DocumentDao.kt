@@ -6,11 +6,11 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DocumentDao {
-
     @Transaction
     suspend fun insertDocumentWithPages(document: Document, pages: List<Page>) {
         val documentId = insertDocument(document)
@@ -26,6 +26,9 @@ interface DocumentDao {
 
     @Delete
     suspend fun deleteDocument(document: Document)
+
+    @Update
+    suspend fun updateDocument(document: Document)
 
     @Transaction
     @Query("SELECT * FROM documents ORDER BY creation_timestamp DESC")

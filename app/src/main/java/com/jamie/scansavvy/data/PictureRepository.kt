@@ -8,27 +8,22 @@ import com.jamie.scansavvy.data.database.DocumentDao
 import com.jamie.scansavvy.data.database.DocumentWithPages
 import com.jamie.scansavvy.data.database.Page
 import com.jamie.scansavvy.domain.DocumentAnalyzer
-import com.jamie.scansavvy.domain.PdfExporter
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.firstOrNull
-
 
 @Singleton
 class PictureRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val documentDao: DocumentDao,
-    private val documentAnalyzer: DocumentAnalyzer,
-    private val pdfExporter: PdfExporter
+    private val documentAnalyzer: DocumentAnalyzer
 ) {
-
     fun getAllDocuments(): Flow<List<DocumentWithPages>> {
         return documentDao.getAllDocumentsWithPages()
     }
@@ -37,10 +32,24 @@ class PictureRepository @Inject constructor(
         return documentDao.getDocumentWithPagesById(documentId)
     }
 
+    fun searchDocuments(query: String): Flow<List<DocumentWithPages>> {
+        val ftsQuery = if (query.isNotBlank()) "$query*" else query
+        return documentDao.searchDocuments(ftsQuery)
+    }
+
+    suspend fun renameDocument(document: Document, newTitle: String): Result<Unit> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            documentDao.updateDocument(document.copy(title = newTitle))
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun deleteDocument(document: Document): Result<Unit> = withContext(Dispatchers.IO) {
         return@withContext try {
             val docWithPagesFlow = documentDao.getDocumentWithPagesById(document.id)
-            docWithPagesFlow.first()?.pages?.forEach { page ->
+            docWithPagesFlow.firstOrNull()?.pages?.forEach { page ->
                 val file = File(page.imageUri.toUri().path!!)
                 if (file.exists()) {
                     file.delete()
@@ -69,23 +78,19 @@ class PictureRepository @Inject constructor(
                 throw Exception("Failed to copy scanned images to permanent storage.")
             }
 
-            // Step 1: Analyze the content BEFORE saving to the database
             val analysisResult = documentAnalyzer.analyze(permanentUris)
 
-            // Step 2: Create the permanent Page objects with the OCR text
             permanentUris.forEachIndexed { index, uri ->
                 permanentPageList.add(
                     Page(
                         documentId = 0,
                         pageNumber = index + 1,
                         imageUri = uri.toString(),
-                        // For simplicity, we assign the full text to the first page.
                         ocrText = if (index == 0) analysisResult.fullText else ""
                     )
                 )
             }
 
-            // Step 3: Create the Document with the new smart title
             val newDocument = Document(title = analysisResult.smartTitle)
             val newDocumentId = documentDao.insertDocument(newDocument)
             val pagesWithDocumentId = permanentPageList.map { it.copy(documentId = newDocumentId.toInt()) }
@@ -109,20 +114,6 @@ class PictureRepository @Inject constructor(
         } catch (e: Exception) {
             e.printStackTrace()
             null
-        }
-    }
-
-    fun searchDocuments(query: String): Flow<List<DocumentWithPages>> {
-        val ftsQuery = if (query.isNotBlank()) "$query*" else query
-        return documentDao.searchDocuments(ftsQuery)
-    }
-
-    suspend fun generatePdfForDocument(documentId: Int): Result<Uri> {
-        val document = getDocumentById(documentId).firstOrNull()
-        return if (document != null) {
-            pdfExporter.createPdf(document)
-        } else {
-            Result.failure(Exception("Document not found."))
         }
     }
 }
