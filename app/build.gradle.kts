@@ -96,6 +96,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.7")
     implementation("androidx.biometric:biometric-ktx:1.2.0-alpha05")
 
+    implementation("com.google.android.play:review-ktx:2.0.2")
 
 
     implementation("androidx.room:room-runtime:2.7.1")

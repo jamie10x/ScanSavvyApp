@@ -8,6 +8,7 @@ import com.jamie.scansavvy.data.database.DocumentDao
 import com.jamie.scansavvy.data.database.DocumentWithPages
 import com.jamie.scansavvy.data.database.Page
 import com.jamie.scansavvy.domain.DocumentAnalyzer
+import com.jamie.scansavvy.domain.PdfExporter
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -22,7 +23,8 @@ import javax.inject.Singleton
 class PictureRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val documentDao: DocumentDao,
-    private val documentAnalyzer: DocumentAnalyzer
+    private val documentAnalyzer: DocumentAnalyzer,
+    private val pdfExporter: PdfExporter
 ) {
     fun getAllDocuments(): Flow<List<DocumentWithPages>> {
         return documentDao.getAllDocumentsWithPages()
@@ -35,6 +37,15 @@ class PictureRepository @Inject constructor(
     fun searchDocuments(query: String): Flow<List<DocumentWithPages>> {
         val ftsQuery = if (query.isNotBlank()) "$query*" else query
         return documentDao.searchDocuments(ftsQuery)
+    }
+
+    suspend fun generatePdfForDocument(documentId: Int): Result<Uri> {
+        val document = getDocumentById(documentId).firstOrNull()
+        return if (document != null) {
+            pdfExporter.createPdf(document)
+        } else {
+            Result.failure(Exception("Document not found."))
+        }
     }
 
     suspend fun renameDocument(document: Document, newTitle: String): Result<Unit> = withContext(Dispatchers.IO) {

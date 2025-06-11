@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.google.android.play.core.review.ReviewManagerFactory
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.jamie.scansavvy.presentation.navigation.Screen
@@ -35,6 +36,7 @@ fun CameraScreen(
     viewModel: CameraViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val activity = context as Activity
 
     LaunchedEffect(key1 = true) {
         viewModel.events.collectLatest { event ->
@@ -45,6 +47,17 @@ fun CameraScreen(
                 }
                 is CameraEvent.ScanFailure -> {
                     Toast.makeText(context, event.errorMessage, Toast.LENGTH_LONG).show()
+                }
+                // Handle the new event
+                is CameraEvent.RequestReview -> {
+                    val reviewManager = ReviewManagerFactory.create(activity)
+                    val request = reviewManager.requestReviewFlow()
+                    request.addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            val reviewInfo = task.result
+                            reviewManager.launchReviewFlow(activity, reviewInfo)
+                        }
+                    }
                 }
             }
         }
@@ -69,7 +82,7 @@ fun CameraScreen(
             Button(
                 onClick = {
                     val scanner = GmsDocumentScanning.getClient(viewModel.scannerOptions)
-                    scanner.getStartScanIntent(context as Activity)
+                    scanner.getStartScanIntent(context)
                         .addOnSuccessListener { intentSender: IntentSender ->
                             scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
                         }

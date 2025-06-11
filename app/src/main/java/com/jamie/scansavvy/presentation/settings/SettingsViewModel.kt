@@ -2,11 +2,12 @@ package com.jamie.scansavvy.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.jamie.scansavvy.data.AppSettings
 import com.jamie.scansavvy.data.SettingsRepository
+import com.jamie.scansavvy.utils.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -16,15 +17,17 @@ class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
-    // The ViewModel consumes the data layer's Flow and maps it to the UI layer's state.
-    val settingsUiState: StateFlow<SettingsUiState> = settingsRepository.appSettingsFlow
-        .map { appSettings ->
-            SettingsUiState(isBiometricLockEnabled = appSettings.isBiometricLockEnabled)
-        }
+    // The state now directly maps the AppSettings model from the repository.
+    val settingsUiState: StateFlow<AppSettings> = settingsRepository.appSettingsFlow
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = SettingsUiState() // The initial value is now of the correct type.
+            initialValue = AppSettings(
+                isBiometricLockEnabled = false,
+                scanCount = 0,
+                lastReviewRequestTimestamp = 0,
+                themeMode = ThemeMode.SYSTEM
+            )
         )
 
     fun onBiometricLockToggled(isEnabled: Boolean) {
@@ -32,9 +35,10 @@ class SettingsViewModel @Inject constructor(
             settingsRepository.setBiometricLockEnabled(isEnabled)
         }
     }
-}
 
-// This data class belongs to the UI layer.
-data class SettingsUiState(
-    val isBiometricLockEnabled: Boolean = false
-)
+    fun onThemeChanged(themeMode: ThemeMode) {
+        viewModelScope.launch {
+            settingsRepository.setThemeMode(themeMode)
+        }
+    }
+}

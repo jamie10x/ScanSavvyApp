@@ -36,6 +36,7 @@ import com.jamie.scansavvy.presentation.settings.SettingsScreen
 import com.jamie.scansavvy.presentation.viewer.ViewerScreen
 import com.jamie.scansavvy.ui.theme.ScanSavvyTheme
 import com.jamie.scansavvy.util.BiometricAuthenticator
+import com.jamie.scansavvy.utils.ThemeMode
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -51,17 +52,19 @@ class MainActivity : AppCompatActivity() {
         val biometricAuthenticator = BiometricAuthenticator(this)
 
         setContent {
-            ScanSavvyTheme {
-                val settingsState by settingsRepository.appSettingsFlow.collectAsState(initial = null)
+
+            val settings by settingsRepository.appSettingsFlow.collectAsState(initial = null)
+
+            ScanSavvyTheme(selectedTheme = settings?.themeMode ?: ThemeMode.SYSTEM) {
                 var isAuthenticated by rememberSaveable { mutableStateOf(false) }
 
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    if (settingsState == null) {
+                    if (settings == null) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
                     } else {
-                        val needsAuth = settingsState!!.isBiometricLockEnabled
+                        val needsAuth = settings!!.isBiometricLockEnabled
                         if (!needsAuth || isAuthenticated) {
                             ScanSavvyNavHost()
                         } else {
